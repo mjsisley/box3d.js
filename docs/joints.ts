@@ -107,4 +107,49 @@ wheelDef.suspensionDampingRatio = 0.7;  // 0 = undamped, 1 = critically damped
 b3.b3CreateWheelJoint(world, wheelDef);
 /* SNIPPET_END: wheel */
 
+/* SNIPPET_START: mover */
+// Mover + pogo joints (experimental upstream): the building blocks of box3d's
+// dynamic character mover sample. The character is a rotation-locked dynamic
+// capsule. A mover joint to a static base body drives its horizontal velocity up
+// to a force budget; a pogo joint to whatever a downward ray hits holds it at a
+// spring rest length above the ground, so it can step up without scraping.
+const baseBody = b3.b3CreateBody(world, b3.b3DefaultBodyDef());
+
+const characterDef = b3.b3DefaultBodyDef();
+characterDef.type = b3.b3BodyType.b3_dynamicBody;
+characterDef.position = [0, 1.4, 4]; // ground top 0 + rest 0.9 + half-height 0.5
+characterDef.motionLocks.angularX = true;
+characterDef.motionLocks.angularY = true;
+characterDef.motionLocks.angularZ = true;
+const character = b3.b3CreateBody(world, characterDef);
+const capsuleDef = b3.b3DefaultShapeDef();
+capsuleDef.baseMaterial.friction = 0; // the joints own the motion
+b3.b3CreateCapsuleShape(character, capsuleDef, { center1: [0, -0.5, 0], center2: [0, 0.5, 0], radius: 0.3 });
+
+const moverDef = b3.b3DefaultMoverJointDef();
+moverDef.base.bodyIdA = baseBody;
+moverDef.base.bodyIdB = character;
+moverDef.base.collideConnected = true;
+moverDef.maxForce = 6000;
+const moverJoint = b3.b3CreateMoverJoint(world, moverDef);
+b3.b3MoverJoint_SetLinearVelocity(moverJoint, [2, 0, 0]); // update every step from input
+
+const ground = makeBox(0, -0.5, 4, true); // the body a downward ray hit under the character
+const pogoDef = b3.b3DefaultPogoJointDef();
+pogoDef.base.bodyIdA = ground;
+pogoDef.base.bodyIdB = character;
+pogoDef.base.collideConnected = true;
+pogoDef.base.localFrameA = { position: [0, 0.5, 0], quaternion: IDENTITY_QUAT }; // ray hit, in ground's frame
+pogoDef.base.localFrameB = { position: [0, -0.5, 0], quaternion: IDENTITY_QUAT }; // lower capsule center
+pogoDef.normal = [0, 1, 0]; // ground normal from the ray hit
+pogoDef.restLength = 0.9;
+pogoDef.hertz = 3;
+pogoDef.dampingRatio = 0.8;
+pogoDef.maxCompressionForce = 1e5;
+pogoDef.maxTensionForce = 1e5;
+const pogoJoint = b3.b3CreatePogoJoint(world, pogoDef);
+// Each step: move the pogo frames to the new ray hit, or recreate it when the ground body changes.
+b3.b3PogoJoint_SetNormal(pogoJoint, [0, 1, 0]);
+/* SNIPPET_END: mover */
+
 b3.b3DestroyWorld(world);

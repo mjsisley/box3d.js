@@ -263,6 +263,10 @@ Joints constrain the relative motion between two bodies. All joint defs share a 
 
 <Snippet source="./joints.ts" select="wheel" />
 
+### Mover and Pogo (Dynamic Character)
+
+<Snippet source="./joints.ts" select="mover" />
+
 ## Queries
 
 Queries ask questions about the physics world without advancing the simulation.

@@ -184,6 +184,18 @@
       "interactive"
     ]
   },
+  "example-dynamic-mover": {
+    "title": "Dynamic Mover",
+    "description": "a dynamic capsule driven by mover + pogo joints: steps, ledges, steep slopes and pushable crates",
+    "tags": [
+      "character",
+      "mover",
+      "dynamic-mover",
+      "pogo",
+      "joints",
+      "interactive"
+    ]
+  },
   "example-static-compound": {
     "title": "Static Compound",
     "description": "one static compound shape (a bin) built from many box children; balls rain in",
