@@ -582,7 +582,9 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.value( "b3_revoluteJoint", b3_revoluteJoint )
 		.value( "b3_sphericalJoint", b3_sphericalJoint )
 		.value( "b3_weldJoint", b3_weldJoint )
-		.value( "b3_wheelJoint", b3_wheelJoint );
+		.value( "b3_wheelJoint", b3_wheelJoint )
+		.value( "b3_moverJoint", b3_moverJoint )
+		.value( "b3_pogoJoint", b3_pogoJoint );
 
 	// Math value types are mathcat-shaped plain arrays (see file header).
 	// b3Vec3 -> [x,y,z], b3Quat -> [x,y,z,w], b3AABB -> [minX,minY,minZ,maxX,maxY,maxZ].
@@ -752,6 +754,9 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "enableContinuous", &b3WorldDef::enableContinuous )
 		.field( "workerCount", &b3WorldDef::workerCount )
 		.field( "capacity", &b3WorldDef::capacity )
+		.field( "restitutionIterations", &b3WorldDef::restitutionIterations )
+		.field( "enableRestitutionPropagation", &b3WorldDef::enableRestitutionPropagation )
+		.field( "isotropicInertiaTolerance", &b3WorldDef::isotropicInertiaTolerance )
 		.field( "internalValue", &b3WorldDef::internalValue );
 
 	value_object<b3BodyDef>( "b3BodyDef" )
@@ -771,6 +776,7 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "isEnabled", &b3BodyDef::isEnabled )
 		.field( "allowFastRotation", &b3BodyDef::allowFastRotation )
 		.field( "enableContactRecycling", &b3BodyDef::enableContactRecycling )
+		.field( "safetyFactor", &b3BodyDef::safetyFactor )
 		.field( "internalValue", &b3BodyDef::internalValue );
 
 	value_object<b3ShapeDef>( "b3ShapeDef" )
@@ -786,6 +792,7 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "enablePreSolveEvents", &b3ShapeDef::enablePreSolveEvents )
 		.field( "invokeContactCreation", &b3ShapeDef::invokeContactCreation )
 		.field( "updateBodyMass", &b3ShapeDef::updateBodyMass )
+		.field( "enableSpeculativeContact", &b3ShapeDef::enableSpeculativeContact )
 		.field( "internalValue", &b3ShapeDef::internalValue );
 
 	function( "b3DefaultWorldDef()", &b3DefaultWorldDef );
@@ -822,10 +829,8 @@ EMSCRIPTEN_BINDINGS( box3d )
 	function( "b3World_GetAwakeBodyCount(worldId)", &b3World_GetAwakeBodyCount );
 	function( "b3World_SetWorkerCount(worldId, count)", &b3World_SetWorkerCount );
 	function( "b3World_GetWorkerCount(worldId)", &b3World_GetWorkerCount );
-	function( "b3World_RebuildStaticTree(worldId)", &b3World_RebuildStaticTree );
 	function( "b3World_EnableSpeculative(worldId, flag)", &b3World_EnableSpeculative );
 	function( "b3World_GetMaxCapacity(worldId)", &b3World_GetMaxCapacity );
-	function( "b3World_DumpShapeBounds(worldId, type)", &b3World_DumpShapeBounds );
 
 	function( "b3CreateBody(worldId, bodyDef)", +[]( b3WorldId worldId, b3BodyDef def ) { return b3CreateBody( worldId, &def ); } );
 	function( "b3DestroyBody(bodyId)", &b3DestroyBody );
@@ -969,8 +974,8 @@ EMSCRIPTEN_BINDINGS( box3d )
 		return b3CreateCompound( &def );
 	}, allow_raw_pointers() );
 	function( "b3DestroyCompound(compound)", &b3DestroyCompound, allow_raw_pointers() );
-	function( "b3CreateCompoundShape(bodyId, shapeDef, compound)",
-		+[]( b3BodyId bodyId, b3ShapeDef def, b3CompoundData* compound ) { return b3CreateCompoundShape( bodyId, &def, compound ); },
+	function( "b3CreateBakedCompoundShape(bodyId, shapeDef, compound)",
+		+[]( b3BodyId bodyId, b3ShapeDef def, b3CompoundData* compound ) { return b3CreateBakedCompoundShape( bodyId, &def, compound ); },
 		allow_raw_pointers() );
 
 	class_<b3HeightFieldData>( "b3HeightFieldData" );
@@ -1222,22 +1227,24 @@ EMSCRIPTEN_BINDINGS( box3d )
 		b3CollideHulls( &m, 4, a, b, xf, &cache );
 		return localManifoldToVal( m );
 	}, allow_raw_pointers() );
-	function( "b3CollideCapsuleAndTriangle(capsuleA, v1, v2, v3)", +[]( b3Capsule a, b3Vec3 v1, b3Vec3 v2, b3Vec3 v3 ) -> val
+	// box3d now collides triangle-first: the manifold normal points from the triangle to the shape.
+	function( "b3CollideTriangleAndCapsule(v1, v2, v3, capsuleB)", +[]( b3Vec3 v1, b3Vec3 v2, b3Vec3 v3, b3Capsule b ) -> val
 	{
 		b3Vec3 tri[3] = { v1, v2, v3 }; b3SimplexCache cache = {}; b3LocalManifoldPoint pts[4] = {}; b3LocalManifold m = {}; m.points = pts;
-		b3CollideCapsuleAndTriangle( &m, 4, &a, tri, &cache );
+		b3CollideTriangleAndCapsule( &m, 4, tri, &b, &cache );
 		return localManifoldToVal( m );
 	} );
-	function( "b3CollideHullAndTriangle(hullA, v1, v2, v3, triangleFlags)", +[]( b3HullData* a, b3Vec3 v1, b3Vec3 v2, b3Vec3 v3, int triangleFlags ) -> val
+	function( "b3CollideTriangleAndHull(v1, v2, v3, triangleFlags, hullB, enableSpeculative)",
+		+[]( b3Vec3 v1, b3Vec3 v2, b3Vec3 v3, int triangleFlags, b3HullData* b, bool enableSpeculative ) -> val
 	{
 		b3SATCache cache = {}; b3LocalManifoldPoint pts[4] = {}; b3LocalManifold m = {}; m.points = pts;
-		b3CollideHullAndTriangle( &m, 4, a, v1, v2, v3, triangleFlags, &cache );
+		b3CollideTriangleAndHull( &m, 4, v1, v2, v3, triangleFlags, b, &cache, enableSpeculative );
 		return localManifoldToVal( m );
 	}, allow_raw_pointers() );
-	function( "b3CollideSphereAndTriangle(sphereA, v1, v2, v3)", +[]( b3Sphere a, b3Vec3 v1, b3Vec3 v2, b3Vec3 v3 ) -> val
+	function( "b3CollideTriangleAndSphere(v1, v2, v3, sphereB)", +[]( b3Vec3 v1, b3Vec3 v2, b3Vec3 v3, b3Sphere b ) -> val
 	{
 		b3Vec3 tri[3] = { v1, v2, v3 }; b3LocalManifoldPoint pts[4] = {}; b3LocalManifold m = {}; m.points = pts;
-		b3CollideSphereAndTriangle( &m, 4, &a, tri );
+		b3CollideTriangleAndSphere( &m, 4, tri, &b );
 		return localManifoldToVal( m );
 	} );
 
@@ -1263,7 +1270,7 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "solveImpulses", &b3Profile::solveImpulses )
 		.field( "integratePositions", &b3Profile::integratePositions )
 		.field( "relaxImpulses", &b3Profile::relaxImpulses )
-		.field( "applyRestitution", &b3Profile::applyRestitution )
+		.field( "restitution", &b3Profile::restitution )
 		.field( "storeImpulses", &b3Profile::storeImpulses )
 		.field( "splitIslands", &b3Profile::splitIslands )
 		.field( "transforms", &b3Profile::transforms )
@@ -1399,8 +1406,8 @@ EMSCRIPTEN_BINDINGS( box3d )
 
 	function( "b3Body_GetMass(bodyId)", &b3Body_GetMass );
 	function( "b3Body_GetInverseMass(bodyId)", &b3Body_GetInverseMass );
-	out_function( "b3Body_GetLocalCenterOfMass(out, bodyId)", out_desc::Vec3, out_desc::Pass, +[]( uintptr_t out, b3BodyId bodyId ) { writeVec3( out, b3Body_GetLocalCenterOfMass( bodyId ) ); } );
-	out_function( "b3Body_GetWorldCenterOfMass(out, bodyId)", out_desc::Vec3, out_desc::Pass, +[]( uintptr_t out, b3BodyId bodyId ) { writeVec3( out, b3Body_GetWorldCenterOfMass( bodyId ) ); } );
+	out_function( "b3Body_GetLocalCenter(out, bodyId)", out_desc::Vec3, out_desc::Pass, +[]( uintptr_t out, b3BodyId bodyId ) { writeVec3( out, b3Body_GetLocalCenter( bodyId ) ); } );
+	out_function( "b3Body_GetWorldCenter(out, bodyId)", out_desc::Vec3, out_desc::Pass, +[]( uintptr_t out, b3BodyId bodyId ) { writeVec3( out, b3Body_GetWorldCenter( bodyId ) ); } );
 	function( "b3Body_ApplyMassFromShapes(bodyId)", &b3Body_ApplyMassFromShapes );
 
 	function( "b3Body_SetLinearDamping(bodyId, linearDamping)", &b3Body_SetLinearDamping );
@@ -1606,6 +1613,22 @@ EMSCRIPTEN_BINDINGS( box3d )
 	value_object<b3FilterJointDef>( "b3FilterJointDef" )
 		.field( "base", &b3FilterJointDef::base );
 
+	value_object<b3MoverJointDef>( "b3MoverJointDef" )
+		.field( "base", &b3MoverJointDef::base )
+		.field( "linearVelocity", &b3MoverJointDef::linearVelocity )
+		.field( "maxForce", &b3MoverJointDef::maxForce );
+
+	value_object<b3PogoJointDef>( "b3PogoJointDef" )
+		.field( "base", &b3PogoJointDef::base )
+		.field( "normal", &b3PogoJointDef::normal )
+		.field( "hertz", &b3PogoJointDef::hertz )
+		.field( "dampingRatio", &b3PogoJointDef::dampingRatio )
+		.field( "restLength", &b3PogoJointDef::restLength )
+		.field( "maxTensionForce", &b3PogoJointDef::maxTensionForce )
+		.field( "maxCompressionForce", &b3PogoJointDef::maxCompressionForce )
+		.field( "impulse", &b3PogoJointDef::impulse )
+		.field( "velocity", &b3PogoJointDef::velocity );
+
 	function( "b3DefaultDistanceJointDef()", &b3DefaultDistanceJointDef );
 	function( "b3DefaultRevoluteJointDef()", &b3DefaultRevoluteJointDef );
 	function( "b3DefaultPrismaticJointDef()", &b3DefaultPrismaticJointDef );
@@ -1615,6 +1638,8 @@ EMSCRIPTEN_BINDINGS( box3d )
 	function( "b3DefaultMotorJointDef()", &b3DefaultMotorJointDef );
 	function( "b3DefaultParallelJointDef()", &b3DefaultParallelJointDef );
 	function( "b3DefaultFilterJointDef()", &b3DefaultFilterJointDef );
+	function( "b3DefaultMoverJointDef()", &b3DefaultMoverJointDef );
+	function( "b3DefaultPogoJointDef()", &b3DefaultPogoJointDef );
 
 	function( "b3CreateDistanceJoint(worldId, def)", +[]( b3WorldId w, b3DistanceJointDef d ) { return b3CreateDistanceJoint( w, &d ); } );
 	function( "b3CreateRevoluteJoint(worldId, def)", +[]( b3WorldId w, b3RevoluteJointDef d ) { return b3CreateRevoluteJoint( w, &d ); } );
@@ -1625,6 +1650,8 @@ EMSCRIPTEN_BINDINGS( box3d )
 	function( "b3CreateMotorJoint(worldId, def)", +[]( b3WorldId w, b3MotorJointDef d ) { return b3CreateMotorJoint( w, &d ); } );
 	function( "b3CreateParallelJoint(worldId, def)", +[]( b3WorldId w, b3ParallelJointDef d ) { return b3CreateParallelJoint( w, &d ); } );
 	function( "b3CreateFilterJoint(worldId, def)", +[]( b3WorldId w, b3FilterJointDef d ) { return b3CreateFilterJoint( w, &d ); } );
+	function( "b3CreateMoverJoint(worldId, def)", +[]( b3WorldId w, b3MoverJointDef d ) { return b3CreateMoverJoint( w, &d ); } );
+	function( "b3CreatePogoJoint(worldId, def)", +[]( b3WorldId w, b3PogoJointDef d ) { return b3CreatePogoJoint( w, &d ); } );
 
 	function( "b3DestroyJoint(jointId, wakeAttached)", &b3DestroyJoint );
 	function( "b3Joint_IsValid(id)", &b3Joint_IsValid );
@@ -1650,6 +1677,30 @@ EMSCRIPTEN_BINDINGS( box3d )
 	function( "b3Joint_GetForceThreshold(jointId)", &b3Joint_GetForceThreshold );
 	function( "b3Joint_SetTorqueThreshold(jointId, threshold)", &b3Joint_SetTorqueThreshold );
 	function( "b3Joint_GetTorqueThreshold(jointId)", &b3Joint_GetTorqueThreshold );
+	function( "b3Joint_IsAwake(jointId)", &b3Joint_IsAwake );
+
+	// mover joint (experimental upstream) — drives body B toward a linear velocity relative to body A
+	function( "b3MoverJoint_SetLinearVelocity(jointId, velocity)", &b3MoverJoint_SetLinearVelocity );
+	out_function( "b3MoverJoint_GetLinearVelocity(out, jointId)", out_desc::Vec3, out_desc::Pass, +[]( uintptr_t out, b3JointId jointId ) { writeVec3( out, b3MoverJoint_GetLinearVelocity( jointId ) ); } );
+	function( "b3MoverJoint_SetMaxVelocityForce(jointId, maxForce)", &b3MoverJoint_SetMaxVelocityForce );
+	function( "b3MoverJoint_GetMaxVelocityForce(jointId)", &b3MoverJoint_GetMaxVelocityForce );
+
+	// pogo joint (experimental upstream) — a ground spring along frame B's y-axis for the dynamic mover
+	function( "b3PogoJoint_SetRestLength(jointId, length)", &b3PogoJoint_SetRestLength );
+	function( "b3PogoJoint_GetRestLength(jointId)", &b3PogoJoint_GetRestLength );
+	function( "b3PogoJoint_SetSpringHertz(jointId, hertz)", &b3PogoJoint_SetSpringHertz );
+	function( "b3PogoJoint_GetSpringHertz(jointId)", &b3PogoJoint_GetSpringHertz );
+	function( "b3PogoJoint_SetSpringDampingRatio(jointId, dampingRatio)", &b3PogoJoint_SetSpringDampingRatio );
+	function( "b3PogoJoint_GetSpringDampingRatio(jointId)", &b3PogoJoint_GetSpringDampingRatio );
+	function( "b3PogoJoint_SetMaxTensionForce(jointId, force)", &b3PogoJoint_SetMaxTensionForce );
+	function( "b3PogoJoint_GetMaxTensionForce(jointId)", &b3PogoJoint_GetMaxTensionForce );
+	function( "b3PogoJoint_SetMaxCompressionForce(jointId, force)", &b3PogoJoint_SetMaxCompressionForce );
+	function( "b3PogoJoint_GetMaxCompressionForce(jointId)", &b3PogoJoint_GetMaxCompressionForce );
+	function( "b3PogoJoint_SetNormal(jointId, normal)", &b3PogoJoint_SetNormal );
+	out_function( "b3PogoJoint_GetNormal(out, jointId)", out_desc::Vec3, out_desc::Pass, +[]( uintptr_t out, b3JointId jointId ) { writeVec3( out, b3PogoJoint_GetNormal( jointId ) ); } );
+	function( "b3PogoJoint_GetCurrentLength(jointId)", &b3PogoJoint_GetCurrentLength );
+	function( "b3PogoJoint_GetCurrentSpeed(jointId)", &b3PogoJoint_GetCurrentSpeed );
+	function( "b3PogoJoint_GetImpulse(jointId)", &b3PogoJoint_GetImpulse );
 
 	// parallel joint
 	function( "b3ParallelJoint_SetSpringHertz(jointId, hertz)", &b3ParallelJoint_SetSpringHertz );
@@ -2070,9 +2121,9 @@ EMSCRIPTEN_BINDINGS( box3d )
 	function( "b3RecPlayer_CreateFromRecording(recording, workerCount)", +[]( uintptr_t rec, int workerCount ) -> uintptr_t
 	{
 		b3Recording* r = reinterpret_cast<b3Recording*>( rec );
-		return reinterpret_cast<uintptr_t>( b3RecPlayer_Create( b3Recording_GetData( r ), b3Recording_GetSize( r ), workerCount ) );
+		return reinterpret_cast<uintptr_t>( b3CreatePlayer( b3Recording_GetData( r ), b3Recording_GetSize( r ), workerCount ) );
 	} );
-	function( "b3RecPlayer_Destroy(player)", +[]( uintptr_t p ) { b3RecPlayer_Destroy( reinterpret_cast<b3RecPlayer*>( p ) ); } );
+	function( "b3RecPlayer_Destroy(player)", +[]( uintptr_t p ) { b3DestroyPlayer( reinterpret_cast<b3RecPlayer*>( p ) ); } );
 	function( "b3RecPlayer_StepFrame(player)", +[]( uintptr_t p ) { return b3RecPlayer_StepFrame( reinterpret_cast<b3RecPlayer*>( p ) ); } );
 	function( "b3RecPlayer_Restart(player)", +[]( uintptr_t p ) { b3RecPlayer_Restart( reinterpret_cast<b3RecPlayer*>( p ) ); } );
 	function( "b3RecPlayer_SeekFrame(player, frame)", +[]( uintptr_t p, int frame ) { b3RecPlayer_SeekFrame( reinterpret_cast<b3RecPlayer*>( p ), frame ); } );

@@ -196,6 +196,73 @@ function eventsAndPlanes( b3 )
 	return { sawSensor, planeCount };
 }
 
+// Dynamic mover joints: a rotation-locked capsule held up by a pogo joint to the
+// ground and driven sideways by a mover joint to a hidden static base body.
+function moverJoints( b3 )
+{
+	const worldDef = b3.b3DefaultWorldDef();
+	worldDef.gravity = [ 0, -10, 0 ];
+	const world = b3.b3CreateWorld( worldDef );
+
+	const ground = b3.b3CreateBody( world, b3.b3DefaultBodyDef() );
+	b3.b3CreateBoxShape( ground, b3.b3DefaultShapeDef(), 25, 0.5, 25 );
+	const base = b3.b3CreateBody( world, b3.b3DefaultBodyDef() );
+
+	const moverDef = b3.b3DefaultBodyDef();
+	moverDef.type = b3.b3BodyType.b3_dynamicBody;
+	moverDef.position = [ 0, 2, 0 ];
+	moverDef.motionLocks.angularX = true;
+	moverDef.motionLocks.angularY = true;
+	moverDef.motionLocks.angularZ = true;
+	const mover = b3.b3CreateBody( world, moverDef );
+	const capsuleDef = b3.b3DefaultShapeDef();
+	capsuleDef.density = 200;
+	capsuleDef.baseMaterial.friction = 0;
+	b3.b3CreateCapsuleShape( mover, capsuleDef, { center1: [ 0, -0.5, 0 ], center2: [ 0, 0.5, 0 ], radius: 0.3 } );
+
+	const jointDef = b3.b3DefaultMoverJointDef();
+	jointDef.base.bodyIdA = base;
+	jointDef.base.bodyIdB = mover;
+	jointDef.base.collideConnected = true;
+	jointDef.maxForce = 6000;
+	const moverJoint = b3.b3CreateMoverJoint( world, jointDef );
+	assert.equal( b3.b3Joint_GetType( moverJoint ), b3.b3JointType.b3_moverJoint, 'mover joint type' );
+	b3.b3MoverJoint_SetLinearVelocity( moverJoint, [ 2, 0, 0 ] );
+	const velocity = b3.b3MoverJoint_GetLinearVelocity( [ 0, 0, 0 ], moverJoint );
+	assert.deepEqual( velocity, [ 2, 0, 0 ], 'mover joint velocity reads back through the out-param' );
+
+	// Pogo from the ground top (y = 0.5) to the capsule lower sphere center, resting 0.9 long,
+	// so the capsule center settles at 0.5 + 0.9 + 0.5 = 1.9.
+	const weight = 10 * b3.b3Body_GetMass( mover );
+	const pogoDef = b3.b3DefaultPogoJointDef();
+	pogoDef.base.bodyIdA = ground;
+	pogoDef.base.bodyIdB = mover;
+	pogoDef.base.collideConnected = true;
+	pogoDef.base.localFrameA.position = [ 0, 0.5, 0 ];
+	pogoDef.base.localFrameB.position = [ 0, -0.5, 0 ];
+	pogoDef.restLength = 0.9;
+	pogoDef.hertz = 3;
+	pogoDef.dampingRatio = 0.8;
+	pogoDef.maxCompressionForce = 100 * weight;
+	pogoDef.maxTensionForce = 100 * weight;
+	const pogo = b3.b3CreatePogoJoint( world, pogoDef );
+	assert.equal( b3.b3Joint_GetType( pogo ), b3.b3JointType.b3_pogoJoint, 'pogo joint type' );
+	assert.deepEqual( b3.b3PogoJoint_GetNormal( [ 0, 0, 0 ], pogo ), [ 0, 1, 0 ], 'pogo normal defaults to +y' );
+
+	const pos = [ 0, 0, 0 ];
+	for ( let i = 0; i < 120; i++ )
+	{
+		// keep the pogo anchored under the capsule as it slides
+		b3.b3Body_GetPosition( pos, mover );
+		b3.b3Joint_SetLocalFrameA( pogo, { position: [ pos[ 0 ], 0.5, pos[ 2 ] ], quaternion: [ 0, 0, 0, 1 ] } );
+		b3.b3World_Step( world, 1 / 60, 4 );
+	}
+	b3.b3Body_GetPosition( pos, mover );
+	const length = b3.b3PogoJoint_GetCurrentLength( pogo );
+	b3.b3DestroyWorld( world );
+	return { x: pos[ 0 ], y: pos[ 1 ], length };
+}
+
 async function check( label, importPath )
 {
 	const { default: Box3D } = await import( importPath );
@@ -214,9 +281,15 @@ async function check( label, importPath )
 
 	const { planeCount } = eventsAndPlanes( b3 );
 
+	const mover = moverJoints( b3 );
+	assert.ok( mover.x > 3, `mover joint drove the capsule along x (x=${mover.x.toFixed( 2 )})` );
+	assert.ok( Math.abs( mover.y - 1.9 ) < 0.1, `pogo joint held the capsule at its rest height (y=${mover.y.toFixed( 2 )})` );
+	assert.ok( Math.abs( mover.length - 0.9 ) < 0.1, `pogo current length is near its rest length (${mover.length.toFixed( 2 )})` );
+
 	console.log( `  ${label}: box3d v${v.major}.${v.minor}.${v.revision} — ` +
 		`sphere fell ${startY.toFixed( 2 )} -> ${endY.toFixed( 2 )} and settled; ` +
-		`read ${n} contact(s)/${totalPoints} point(s), a sensor touch, and ${planeCount} mover plane(s) from the buffers` );
+		`read ${n} contact(s)/${totalPoints} point(s), a sensor touch, and ${planeCount} mover plane(s) from the buffers; ` +
+		`mover + pogo joints carried a capsule to x=${mover.x.toFixed( 2 )} at y=${mover.y.toFixed( 2 )}` );
 }
 
 console.log( 'box3d.js smoke test' );
