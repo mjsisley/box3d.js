@@ -12,6 +12,7 @@ upstreamable `feat/box3d-dynamic-mover` branch, which targets the v0.1 array API
 - Added `b3Body_GetLocalCenter` / `b3Body_GetWorldCenter` and `b3CreateBakedCompoundShape`; the old names (`b3Body_GetLocalCenterOfMass`, `b3Body_GetWorldCenterOfMass`, `b3CreateCompoundShape`) stay as aliases. `b3Profile.applyRestitution` reads the renamed `restitution` timer.
 - Triangle collision follows box3d's triangle-first functions: `b3CollideTriangleAndCapsule` / `b3CollideTriangleAndHull` / `b3CollideTriangleAndSphere` replace the shape-first names; the normal points from the triangle to the shape.
 - Removed `b3World_RebuildStaticTree` (gone from box3d) and `b3World_DumpShapeBounds` (declared but no longer implemented).
+- `b3GetByteCount()` and `b3Counters.byteCount` stay JS numbers; box3d widened them to `int64_t`, which embind would return as a BigInt.
 
 ## v0.0.2
 

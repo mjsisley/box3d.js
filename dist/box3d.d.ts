@@ -178,20 +178,6 @@ export type b3ContactEndTouchEvent = {
   contactId: b3ContactId
 };
 
-export type b3Counters = {
-  bodyCount: number,
-  shapeCount: number,
-  contactCount: number,
-  jointCount: number,
-  islandCount: number,
-  stackUsed: number,
-  byteCount: bigint,
-  taskCount: number,
-  awakeContactCount: number,
-  treeHeight: number,
-  staticTreeHeight: number
-};
-
 export type b3Filter = {
   categoryBits: bigint,
   maskBits: bigint,
@@ -600,6 +586,20 @@ export type b3CosSin = {
   sine: number
 };
 
+export type b3Counters = {
+  bodyCount: number,
+  shapeCount: number,
+  contactCount: number,
+  jointCount: number,
+  islandCount: number,
+  stackUsed: number,
+  byteCount: number,
+  taskCount: number,
+  awakeContactCount: number,
+  treeHeight: number,
+  staticTreeHeight: number
+};
+
 interface EmbindModule {
   b3BodyType: {b3_staticBody: b3BodyTypeValue<0>, b3_kinematicBody: b3BodyTypeValue<1>, b3_dynamicBody: b3BodyTypeValue<2>};
   b3ShapeType: {b3_capsuleShape: b3ShapeTypeValue<0>, b3_compoundShape: b3ShapeTypeValue<1>, b3_heightShape: b3ShapeTypeValue<2>, b3_hullShape: b3ShapeTypeValue<3>, b3_meshShape: b3ShapeTypeValue<4>, b3_sphereShape: b3ShapeTypeValue<5>};
@@ -754,8 +754,6 @@ interface EmbindModule {
   b3RecPlayer_HasDiverged(player: number): boolean;
   b3RecPlayer_GetDivergeFrame(player: number): number;
   b3RecPlayer_SetWorkerCount(player: number, count: number): void;
-  b3GetByteCount(): bigint;
-  b3World_GetCounters(worldId: b3WorldId): b3Counters;
   b3DefaultFilter(): b3Filter;
   b3Shape_GetFilter(shapeId: b3ShapeId): b3Filter;
   b3Shape_SetFilter(shapeId: b3ShapeId, filter: b3Filter, invokeContacts: boolean): void;
@@ -1073,6 +1071,8 @@ interface EmbindModule {
   b3AABB_Area(aabb: b3AABB): number;
   b3ComputeCosSin(radians: number): b3CosSin;
   b3DynamicTree_GetAreaRatio(tree: b3DynamicTree | null): number;
+  b3GetByteCount(): number;
+  b3World_GetCounters(worldId: b3WorldId): b3Counters;
   b3Body_SetName(bodyId: b3BodyId, name: EmbindString): void;
   b3Body_GetName(bodyId: b3BodyId): string;
   b3CreateHull(points: any): b3HullData | null;

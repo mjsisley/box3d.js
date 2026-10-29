@@ -341,7 +341,8 @@ EMSCRIPTEN_BINDINGS( box3d )
 
 	function( "b3GetVersion()", &b3GetVersion );
 	function( "b3IsDoublePrecision()", &b3IsDoublePrecision );
-	function( "b3GetByteCount()", &b3GetByteCount );
+	// box3d widened the byte count to int64_t; keep it a JS number (exact to 2^53) rather than a BigInt.
+	function( "b3GetByteCount()", +[]() { return (double)b3GetByteCount(); } );
 
 	enum_<b3BodyType>( "b3BodyType" )
 		.value( "b3_staticBody", b3_staticBody )
@@ -792,7 +793,7 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "jointCount", &b3Counters::jointCount )
 		.field( "islandCount", &b3Counters::islandCount )
 		.field( "stackUsed", &b3Counters::stackUsed )
-		.field( "byteCount", &b3Counters::byteCount )
+		.field( "byteCount", +[]( const b3Counters& c ) { return (double)c.byteCount; }, +[]( b3Counters& c, double v ) { c.byteCount = (int64_t)v; } )
 		.field( "taskCount", &b3Counters::taskCount )
 		.field( "awakeContactCount", &b3Counters::awakeContactCount )
 		.field( "treeHeight", &b3Counters::treeHeight )
